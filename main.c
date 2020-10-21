@@ -6,7 +6,10 @@
 #include <unistd.h>
 #include <memory.h>
 
+#define nombreDeServers 1
 #define printF(x) write(1, x, strlen(x))
+#define portAConnectar 2200
+#define portMeu 2201
 
 pthread_t thread_id;
 
@@ -112,15 +115,36 @@ int main() {
 
     int estat = pthread_create(&thread_id, NULL, serverConnection, NULL);
 
-    struct sockaddr_in serv_addr;
 
-    serv_addr.sin_port = htons((uint16_t) atoi("2201"));
-    inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr);
-    serv_addr.sin_family = AF_INET;
 
-    int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    struct sockaddr_in *serv_addr;
 
-    int connectS = connect( sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    serv_addr = (struct sockaddr_in *) malloc(sizeof(struct sockaddr_in));
+
+    int i;
+
+    int port = portAConnectar;
+
+    int *sockfd = (int*)malloc(sizeof(int));
+
+    for(i = 0; i < nombreDeServers; i++){
+        if(portMeu != port + i ) {
+
+            serv_addr = (struct sockaddr_in *)realloc(serv_addr, sizeof(struct sockaddr_in)*(i+1));
+
+            serv_addr[i].sin_port = htons((uint16_t) (port + i));
+            inet_pton(AF_INET, "127.0.0.1", &serv_addr[i].sin_addr);
+            serv_addr[i].sin_family = AF_INET;
+
+            sockfd = (int*)realloc(sockfd, sizeof(int)*(i+1));
+
+            sockfd[i] = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+            int connectS = connect(sockfd[i], (struct sockaddr *) &serv_addr[i], sizeof(serv_addr));
+        }
+    }
+
+
 
     char flag = 0;
 
