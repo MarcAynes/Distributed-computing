@@ -8,7 +8,7 @@
 
 #define nombreDeServers 1
 #define printF(x) write(1, x, strlen(x))
-#define portAConnectar 2200
+#define portAConnectar 2200 //port base si tenim 10 servers, tindrem del 2200 - 2210
 #define portMeu 2201
 
 pthread_t thread_id;
@@ -40,23 +40,17 @@ void dedicatedServer(void* info){
         read(localFd, &joan, sizeof(int));
 
         if (joan > prioritat && treballa) {
-
             char alex = 'F';
             int i;
 
             for (i = 0; i < numThreads; i++) {
-
                 write(localFd, &alex, sizeof(char));
             }
-
-
         } else {
-
             char alex = 'K';
             int i;
 
             for (i = 0; i < numThreads; i++) {
-
                 write(localFd, &alex, sizeof(char));
             }
 
@@ -70,7 +64,6 @@ void dedicatedServer(void* info){
 
 
 }
-
 
 
 void serverConnection(){
@@ -110,15 +103,12 @@ void serverConnection(){
         }
     }
 }
-
+/*
 int main() {
 
     int estat = pthread_create(&thread_id, NULL, serverConnection, NULL);
 
-
-
     struct sockaddr_in *serv_addr;
-
     serv_addr = (struct sockaddr_in *) malloc(sizeof(struct sockaddr_in));
 
     int i;
@@ -129,7 +119,6 @@ int main() {
 
     for(i = 0; i < nombreDeServers; i++){
         if(portMeu != port + i ) {
-
             serv_addr = (struct sockaddr_in *)realloc(serv_addr, sizeof(struct sockaddr_in)*(i+1));
 
             serv_addr[i].sin_port = htons((uint16_t) (port + i));
@@ -143,8 +132,6 @@ int main() {
             int connectS = connect(sockfd[i], (struct sockaddr *) &serv_addr[i], sizeof(serv_addr));
         }
     }
-
-
 
     char flag = 0;
 
@@ -212,4 +199,42 @@ int main() {
     }
 
     return 0;
+}*/
+
+int main(){
+    //creacio del servidor on acceptarem connexions
+    int estat = pthread_create(&thread_id, NULL, serverConnection, NULL);
+
+    struct sockaddr_in *serv_addr;
+    serv_addr = (struct sockaddr_in *) malloc(sizeof(struct sockaddr_in));
+
+    int i;
+
+    int port = portAConnectar;
+
+    int *sockfd = (int*)malloc(sizeof(int));
+
+    //connexió amb tots els altres servidors
+    for(i = 0; i < nombreDeServers; i++){
+        //si el port al que ens volem connectar no es el meu, creem el socket, si es meu fem el següent.
+        if(portMeu != port ) {
+            serv_addr = (struct sockaddr_in *)realloc(serv_addr, sizeof(struct sockaddr_in)*(i+1));
+
+            serv_addr[i].sin_port = htons((uint16_t) (port));
+            inet_pton(AF_INET, "127.0.0.1", &serv_addr[i].sin_addr);
+            serv_addr[i].sin_family = AF_INET;
+
+            sockfd = (int*)realloc(sockfd, sizeof(int)*(i+1));
+
+            sockfd[i] = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+            int connectS;
+            do{
+                connectS = connect(sockfd[i], (struct sockaddr *) &serv_addr[i], sizeof(serv_addr));
+                //comprovació error al crear la connexió (el client pot no estar engegat en aquell moment)
+            }while(!connectS); //-1 error 0 correct
+
+
+        }
+    }
 }
