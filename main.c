@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <pthread.h>
 #include <netinet/in.h>
@@ -5,12 +7,14 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <memory.h>
+#include <errno.h>
 #include <signal.h>
 
-#define nombreDeServers 4
+
+#define nombreDeServers 3
 #define printF(x) write(1, x, strlen(x))
-#define portAConnectar 2200 //port base si tenim 10 servers, tindrem del 2200 - 2210
-#define portMeu 2201
+#define portAConnectar 8200 //port base si tenim 10 servers, tindrem del 2200 - 2210
+#define portMeu 8202
 
 pthread_t thread_id;
 
@@ -46,7 +50,7 @@ infoThread* threadList;
  */
 
 
-void dedicatedServer(void* info){
+void* dedicatedServer(void* info){
 
     infoThread thread = *((infoThread*) info);
     int localFd = thread.fd;
@@ -59,7 +63,7 @@ void dedicatedServer(void* info){
             case 'R':
                 ;
                 int prioritatClient;
-                read(localFd, prioritatClient, sizeof(int));
+                read(localFd, &prioritatClient, sizeof(int));
 
                 while (treballant){         //si estic treballant espero al acabar per respondre que poden continuar
                     continue;
@@ -86,7 +90,7 @@ void dedicatedServer(void* info){
                 read(localFd, &novaDada, sizeof(int));
                 regioCritica = novaDada;
                 char string[20];
-                sprintf(string, "%d\n\0", regioCritica); //printem la dada per pantalla
+                sprintf(string, "%d\n", regioCritica); //printem la dada per pantalla
                 printF(string);
                 break;
 
@@ -101,18 +105,28 @@ void dedicatedServer(void* info){
 }
 
 
-void serverConnection(){
+void* serverConnection(){
+	
+	printF("server obert\n");
 
     struct sockaddr_in my_addr, cli_addr;
     int fdSocket = 0;
 
     fdSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
+	if(-1 ==  fdSocket){
+		printF("Error en la creacion del socket\n");
+	}
+
     my_addr.sin_family = AF_INET;
-    my_addr.sin_port = htons((uint16_t) atoi("2201"));
+    my_addr.sin_port = htons((uint16_t) portMeu);
     inet_aton("127.0.0.1", &my_addr.sin_addr);
 
-    int bindS = bind(fdSocket, (struct sockaddr *) &my_addr, sizeof(my_addr));
+    int bindN = bind(fdSocket, (struct sockaddr *) &my_addr, sizeof(my_addr));
+	
+	if(bindN == -1){
+		printF("Error en el bind\n");
+	}
 
     threadList = (infoThread * )malloc(sizeof(infoThread));
     numThreads = 0;
@@ -238,7 +252,7 @@ int main() {
 
 int main(){
     //creacio del servidor on acceptarem connexions
-    int estat = pthread_create(&thread_id, NULL, serverConnection, NULL);
+    pthread_create(&thread_id, NULL, serverConnection, NULL);
 
     struct sockaddr_in *serv_addr;
     serv_addr = (struct sockaddr_in *) malloc(sizeof(struct sockaddr_in));
@@ -254,19 +268,25 @@ int main(){
         //si el port al que ens volem connectar no es el meu, creem el socket, si es meu fem el següent.
         if(portMeu != port ) {
             serv_addr = (struct sockaddr_in *)realloc(serv_addr, sizeof(struct sockaddr_in)*(i+1));
-
+			
+			memset(&serv_addr[i], 0, sizeof(serv_addr[i]));
+			serv_addr[i].sin_family = AF_INET;
             serv_addr[i].sin_port = htons((uint16_t) (port));
-            inet_pton(AF_INET, "127.0.0.1", &serv_addr[i].sin_addr);
-            serv_addr[i].sin_family = AF_INET;
+			serv_addr[i].sin_addr.s_addr = inet_addr("127.0.0.1");
+            //inet_pton(AF_INET, "127.0.0.1", &serv_addr[i].sin_addr);
 
             sockfd = (int*)realloc(sockfd, sizeof(int)*(i+1));
             sockfd[i] = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-
+			printf("%d\n", sockfd[i]);
             int connectS;
             do{
-                connectS = connect(sockfd[i], (struct sockaddr *) &serv_addr[i], sizeof(serv_addr));
-                //comprovació error al crear la connexió (el client pot no estar engegat en aquell moment)
-            }while(!connectS); //-1 error 0 correct
+                connectS = connect(sockfd[i], (struct sockaddr *) &serv_addr[i], sizeof(serv_addr[i]));
+                sleep(1);
+				char buff[128];
+				int bytes = sprintf(buff, "errno says: %s\n", strerror(errno)); // molt útil
+            	write(1, buff, bytes);
+				//comprovació error al crear la connexió (el client pot no estar engegat en aquell moment)
+			}while(connectS == -1); //-1 error 0 correct
 
         }
         port++;
