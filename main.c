@@ -5,8 +5,9 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <memory.h>
+#include <signal.h>
 
-#define nombreDeServers 1
+#define nombreDeServers 4
 #define printF(x) write(1, x, strlen(x))
 #define portAConnectar 2200 //port base si tenim 10 servers, tindrem del 2200 - 2210
 #define portMeu 2201
@@ -19,14 +20,30 @@ int numThreads;
 
 int prioritat = 1;
 
-char treballa = 0;
+int regioCritica = 0;
+
+char vullTreballar = 0;
+
+char treballant = 0;
 
 typedef struct{
-
     int fd;
 }infoThread;
 
 infoThread* threadList;
+
+/*
+ *
+ * Protocol de comunicació:
+ *
+ * R: Vull accedir a la regió critica.
+ *
+ * D: dades noves enviant-se
+ *
+ * K: OK -> pots treballar
+ *
+ *
+ */
 
 
 void dedicatedServer(void* info){
@@ -34,31 +51,49 @@ void dedicatedServer(void* info){
     infoThread thread = *((infoThread*) info);
     int localFd = thread.fd;
 
-    int joan;
+    char messageCode;
 
-    while (1) {
-        read(localFd, &joan, sizeof(int));
+    while(1){
+        read(localFd, &messageCode, 1);
+        switch (messageCode){
+            case 'R':
+                ;
+                int prioritatClient;
+                read(localFd, prioritatClient, sizeof(int));
 
-        if (joan > prioritat && treballa) {
-            char alex = 'F';
-            int i;
+                while (treballant){         //si estic treballant espero al acabar per respondre que poden continuar
+                    continue;
+                }
 
-            for (i = 0; i < numThreads; i++) {
-                write(localFd, &alex, sizeof(char));
-            }
-        } else {
-            char alex = 'K';
-            int i;
+                if (vullTreballar){         //si vull treballar haig de mirar la prioritat
+                    if(prioritatClient < prioritat){ //ell té mes prioritat que jo
+                        write(localFd, "K", 1);
+                    }else{
+                        while (vullTreballar){         //quan no vulgui treballar li enviare el ok.
+                            continue;
+                        }
 
-            for (i = 0; i < numThreads; i++) {
-                write(localFd, &alex, sizeof(char));
-            }
+                        write(localFd, "K", 1);
+                    }
+                }else{                      //si no vull treballar, ells poden actuar perfectament
+                    write(localFd, "K", 1);
+                }
+                break;
 
-            char nouNum;
-            read(localFd, &nouNum, sizeof(char));
+            case 'D':   //nova dada a modificar
+                ;
+                int novaDada;
+                read(localFd, &novaDada, sizeof(int));
+                regioCritica = novaDada;
+                char string[20];
+                sprintf(string, "%d\n\0", regioCritica); //printem la dada per pantalla
+                printF(string);
+                break;
 
-            numeroPelQueEsMontaAixo[0] = nouNum;
-            treballa = 0;
+            default:
+                printF("Error amb les trames");
+                kill(getpid(), SIGINT);
+                break;
         }
     }
 
@@ -225,7 +260,6 @@ int main(){
             serv_addr[i].sin_family = AF_INET;
 
             sockfd = (int*)realloc(sockfd, sizeof(int)*(i+1));
-
             sockfd[i] = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
             int connectS;
@@ -234,7 +268,45 @@ int main(){
                 //comprovació error al crear la connexió (el client pot no estar engegat en aquell moment)
             }while(!connectS); //-1 error 0 correct
 
-
         }
+        port++;
     }
+
+    //codi per treballar
+    printF("Tots els servidors en linia\n");
+    char basura;
+    while(1){
+        //lectura de \n que indicara que volem accedir a regio critica
+        read(0, &basura, 1);
+        vullTreballar = 1;  //volem treballar aixi que hem d'avisar als threads amb la variable global
+        port = portAConnectar;
+
+        //iterem per tots els servers creats (nombre total de servers 4 - 1 ja que el 4 soc jo)
+        for(i = 0; i < nombreDeServers - 1; i++){
+            write(sockfd[i], "R", 1); //R = Regio critica -> vull accedir a la regio critica
+            write(sockfd[i], &prioritat, sizeof(int));  //enviem el nostre id (prioritat)
+        }
+
+        char response;
+        for(i = 0; i < nombreDeServers - 1; i++){
+            read(sockfd[i], &response, 1);
+            if(response == 'K'){            //K = OK, perfe -> tens permis
+                continue;
+            }
+        }
+
+        treballant = 1;
+        regioCritica++;
+
+        for(i = 0; i < nombreDeServers - 1; i++){
+            write(sockfd[i], "D", 1); //D: data -> nova info disponible
+            write(sockfd[i], &regioCritica, sizeof(int));  //enviem la nova dada
+        }
+
+        vullTreballar = 0;
+        treballant = 0;
+
+    }
+
+
 }
