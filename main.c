@@ -14,7 +14,7 @@
 #define nombreDeServers 3
 #define printF(x) write(1, x, strlen(x))
 #define portAConnectar 8200 //port base si tenim 10 servers, tindrem del 2200 - 2210
-#define portMeu 8202
+#define portMeu 8200
 
 pthread_t thread_id;
 
@@ -34,7 +34,7 @@ typedef struct{
     int fd;
 }infoThread;
 
-infoThread* threadList;
+infoThread threadList[nombreDeServers];
 
 /*
  *
@@ -59,6 +59,8 @@ void* dedicatedServer(void* info){
 
     while(1){
         read(localFd, &messageCode, 1);
+		printf("operacío: %c\n", messageCode);
+
         switch (messageCode){
             case 'R':
                 ;
@@ -128,24 +130,23 @@ void* serverConnection(){
 		printF("Error en el bind\n");
 	}
 
-    threadList = (infoThread * )malloc(sizeof(infoThread));
     numThreads = 0;
-    listen(fdSocket, 5);
+    listen(fdSocket, 3);
     while(1) {
         socklen_t len = sizeof(cli_addr);
 
         int fdClient = accept(fdSocket, (struct sockaddr *) &cli_addr, &len);
-        threadList = (infoThread *) realloc(threadList, sizeof(infoThread) * (numThreads + 1));
+        if(fdClient < 3){
+			printf("fd: %d\n", fdClient);
+		}
+
         threadList[numThreads].fd = fdClient;
         if (-1 != fdClient) {
             pthread_t thread;
 
             if (0 != pthread_create(&thread, NULL, dedicatedServer, (void *) (&threadList[numThreads]))) {
-
-                //error al creat thread
-
+                printf("Error al crear thread\n");
             } else {
-
                 //thread creat
                 numThreads++;
             }
@@ -262,7 +263,7 @@ int main(){
     int port = portAConnectar;
 
     int *sockfd = (int*)malloc(sizeof(int));
-
+	int jo;
     //connexió amb tots els altres servidors
     for(i = 0; i < nombreDeServers; i++){
         //si el port al que ens volem connectar no es el meu, creem el socket, si es meu fem el següent.
@@ -288,7 +289,9 @@ int main(){
 				//comprovació error al crear la connexió (el client pot no estar engegat en aquell moment)
 			}while(connectS == -1); //-1 error 0 correct
 
-        }
+        }else{
+			jo = i;	
+		}
         port++;
     }
 
@@ -302,13 +305,19 @@ int main(){
         port = portAConnectar;
 
         //iterem per tots els servers creats (nombre total de servers 4 - 1 ja que el 4 soc jo)
-        for(i = 0; i < nombreDeServers - 1; i++){
+        for(i = 0; i < nombreDeServers; i++){
+			if(jo == i){
+				continue;
+			}
             write(sockfd[i], "R", 1); //R = Regio critica -> vull accedir a la regio critica
             write(sockfd[i], &prioritat, sizeof(int));  //enviem el nostre id (prioritat)
         }
 
         char response;
-        for(i = 0; i < nombreDeServers - 1; i++){
+        for(i = 0; i < nombreDeServers; i++){
+			if(jo == i){
+				continue;
+			}
             read(sockfd[i], &response, 1);
             if(response == 'K'){            //K = OK, perfe -> tens permis
                 continue;
@@ -317,8 +326,11 @@ int main(){
 
         treballant = 1;
         regioCritica++;
-
-        for(i = 0; i < nombreDeServers - 1; i++){
+		printf("%d\n", regioCritica);
+        for(i = 0; i < nombreDeServers; i++){
+			if(jo == i){
+				continue;
+			}
             write(sockfd[i], "D", 1); //D: data -> nova info disponible
             write(sockfd[i], &regioCritica, sizeof(int));  //enviem la nova dada
         }
